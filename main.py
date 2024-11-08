@@ -46,8 +46,7 @@ def predict():
     # Make a prediction
     prediction = pipe.predict(test)[0]
     return str(int(prediction))
-
-#if __name__ == "__main__":
- #   app.run(debug=True,port=5001)
- #   input("Press Enter to close...")
+    
+if __name__ == "__main__":
+    app.run()
 
