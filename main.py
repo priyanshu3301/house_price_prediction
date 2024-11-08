@@ -47,6 +47,6 @@ def predict():
     prediction = pipe.predict(test)[0]
     return str(int(prediction))
     
-if __name__ == "__main__":
-    app.run()
+#if __name__ == "__main__":
+ #   app.run()
 
