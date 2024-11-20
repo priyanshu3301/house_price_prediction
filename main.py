@@ -3,7 +3,7 @@ import pickle
 import pandas as pd
 app = Flask(__name__)
 
-pipe = pickle.load(open("RidgeModel.pkl",'rb'))
+pipe = pickle.load(open("finalHousePriceXGBModel.pkl",'rb'))
 
 @app.route('/')
 def index():
@@ -37,17 +37,18 @@ def get_location_names():
 @app.route('/predict', methods=['POST'])
 def predict():
     loc = request.form.get('location')
-    bhk = int(request.form.get('bhk'))
-    bathrooms = int(request.form.get('bath'))
-    size = int(request.form.get('size'))
+    bhk = int(request.form.get('uiBHK'))  # 'uiBHK' should be the name of the radio button for BHK
+    bathrooms = int(request.form.get('uiBATH'))  # 'uiBATH' should be the name of the radio button for Bathrooms
+    size = int(request.form.get('size'))  # 'uiSize' should be the name of the input field for Size
 
-    
     test = pd.DataFrame([[loc,bhk,size,bathrooms]],columns=['loc','bhk','size','bathrooms'])
     # Make a prediction
     prediction = pipe.predict(test)[0]
     return str(int(prediction))
 
-if __name__ == "__main__":
-    app.run(debug=True,port=5001)
-    input("Press Enter to close...")
 
+if __name__ == '__main__':
+
+    # run() method of Flask class runs the application 
+    # on the local development server.
+    app.run()
