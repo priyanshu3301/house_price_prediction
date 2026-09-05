@@ -26,54 +26,70 @@ echo "[*] Memory Target: ${ALLOCATED_MAX_MEM} | CPU Cores: ${CPU_CORES}"
 echo "================================================================"
 
 # ==========================================
-# 1. UPDATE PACKAGES & INSTALL DEPENDENCIES
+# 1. INSTALL BASE SYSTEM UTILITIES
 # ==========================================
-echo "[+] Updating system package indexes and installing tools..."
+echo "[+] Installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-
-# Try installing OpenJDK 21, fallback to 17 or default JDK if 21 is missing
-apt-get install -y -qq openjdk-21-jdk || apt-get install -y -qq openjdk-17-jdk || apt-get install -y -qq default-jdk
 apt-get install -y -qq wget unzip curl rsync zip jq
 
-# Verify Java installation
-echo "[+] Java environment verification:"
-java -version
-
-# ==========================================
-# 2. FETCH LATEST GHIDRA AUTOMATICALLY
-# ==========================================
 mkdir -p "${WORK_DIR}"
 cd "${WORK_DIR}"
 
-if [ ! -d "ghidra_latest" ]; then
-    echo "[+] Dynamically resolving latest official Ghidra release URL..."
+# ==========================================
+# 2. DOWNLOAD PORTABLE OPENJDK 21 (VERIFIED LINK)
+# ==========================================
+JDK_DIR="${WORK_DIR}/jdk-21"
+if [ ! -d "${JDK_DIR}" ] || [ ! -f "${JDK_DIR}/bin/java" ]; then
+    echo "[+] Downloading official OpenJDK 21 binary..."
     
-    # Query GitHub API for the latest public release download asset
+    # Official Adoptium API direct link to latest OpenJDK 21 for Linux x64
+    JDK_URL="https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
+    
+    rm -rf "${JDK_DIR}" openjdk21.tar.gz
+    curl -L --progress-bar "${JDK_URL}" -o openjdk21.tar.gz
+    
+    echo "[+] Extracting OpenJDK 21..."
+    mkdir -p "${JDK_DIR}"
+    tar -xzf openjdk21.tar.gz -C "${JDK_DIR}" --strip-components=1
+    rm openjdk21.tar.gz
+fi
+
+# Set Java variables explicitly for current process and Ghidra
+export JAVA_HOME="${JDK_DIR}"
+export PATH="${JAVA_HOME}/bin:${PATH}"
+
+echo "[+] Verified Java installation at ${JAVA_HOME}:"
+"${JAVA_HOME}/bin/java" -version
+
+# ==========================================
+# 3. DOWNLOAD & CONFIGURE GHIDRA
+# ==========================================
+if [ ! -d "ghidra_latest" ]; then
+    echo "[+] Resolving latest Ghidra release archive..."
+    
     GHIDRA_DL_URL=$(curl -s https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest \
         | jq -r '.assets[] | select(.name | test("ghidra_.*_PUBLIC_.*\\.zip$")) | .browser_download_url')
 
     if [ -z "${GHIDRA_DL_URL}" ] || [ "${GHIDRA_DL_URL}" = "null" ]; then
-        echo "[-] Failed to automatically locate Ghidra release package via API."
-        echo "[-] Using static fallback release mirror..."
+        echo "[-] Using fallback release URL..."
         GHIDRA_DL_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.2_build/ghidra_11.2_PUBLIC_20240926.zip"
     fi
 
     echo "[+] Downloading Ghidra from: ${GHIDRA_DL_URL}"
     wget -q --show-progress "${GHIDRA_DL_URL}" -O ghidra.zip
 
-    echo "[+] Extracting archive..."
+    echo "[+] Extracting Ghidra..."
     unzip -q ghidra.zip
     rm ghidra.zip
 
-    # Rename extracted directory to a unified standard path
     EXTRACTED_DIR=$(ls -d ghidra_*_PUBLIC* | head -n 1)
     mv "${EXTRACTED_DIR}" ghidra_latest
 fi
 
 GHIDRA_DIR="${WORK_DIR}/ghidra_latest"
 
-# Tune memory limits in launch properties
+# Update Java heap memory limit in Ghidra's launch properties
 LAUNCH_PROPERTIES="${GHIDRA_DIR}/support/launch.properties"
 if [ -f "${LAUNCH_PROPERTIES}" ]; then
     echo "[+] Configuring Java Max Heap to ${ALLOCATED_MAX_MEM} in launch settings..."
@@ -81,13 +97,15 @@ if [ -f "${LAUNCH_PROPERTIES}" ]; then
 fi
 
 # ==========================================
-# 3. DOWNLOAD TARGET BINARY
+# 4. FETCH TARGET BINARY
 # ==========================================
 mkdir -p "${WORK_DIR}/target"
 cd "${WORK_DIR}/target"
 
-echo "[+] Downloading shared object file..."
-wget -q --show-progress "${TARGET_SO_URL}" -O "${SO_FILENAME}"
+if [ ! -f "${SO_FILENAME}" ]; then
+    echo "[+] Downloading target shared object binary..."
+    curl -L --progress-bar -o "${SO_FILENAME}" "${TARGET_SO_URL}"
+fi
 
 if [ ! -s "${SO_FILENAME}" ]; then
     echo "[-] Error: Downloaded file is empty or missing. Check TARGET_SO_URL."
@@ -96,12 +114,15 @@ fi
 echo "[+] Binary acquired: $(du -h "${SO_FILENAME}" | cut -f1)"
 
 # ==========================================
-# 4. EXECUTE HEADLESS ANALYSIS
+# 5. EXECUTE HEADLESS ANALYSIS
 # ==========================================
 PROJECT_DIR="${WORK_DIR}/projects"
 mkdir -p "${PROJECT_DIR}"
 
 echo "[+] Launching Ghidra Headless Analyzer..."
+
+# Explicitly pass JAVA_HOME inside environment
+JAVA_HOME="${JDK_DIR}" PATH="${JDK_DIR}/bin:${PATH}" \
 "${GHIDRA_DIR}/support/analyzeHeadless" \
     "${PROJECT_DIR}" \
     "${PROJECT_NAME}" \
@@ -110,7 +131,7 @@ echo "[+] Launching Ghidra Headless Analyzer..."
     -max-cpu "${CPU_CORES}"
 
 # ==========================================
-# 5. PACKAGE PROCESSED PROJECT
+# 6. PACKAGE PROCESSED PROJECT
 # ==========================================
 echo "[+] Packaging analysis results..."
 cd "${PROJECT_DIR}"
