@@ -31,7 +31,10 @@ echo "================================================================"
 echo "[+] Updating system package indexes and installing tools..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq openjdk-21-jdk wget unzip curl rsync zip jq
+
+# Try installing OpenJDK 21, fallback to 17 or default JDK if 21 is missing
+apt-get install -y -qq openjdk-21-jdk || apt-get install -y -qq openjdk-17-jdk || apt-get install -y -qq default-jdk
+apt-get install -y -qq wget unzip curl rsync zip jq
 
 # Verify Java installation
 echo "[+] Java environment verification:"
