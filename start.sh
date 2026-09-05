@@ -8,9 +8,12 @@ set -e
 # ==========================================
 # CONFIGURATION
 # ==========================================
+
+
 # REPLACE THIS WITH YOUR DIRECT DOWNLOAD LINK FOR THE .SO FILE
 TARGET_SO_URL="https://ps-index-drive.sad282.workers.dev/1:/libil2cpp.so"
 SO_FILENAME="libil2cpp.so"
+
 
 # Persistent directory in Deepnote workspace
 WORK_DIR="/workspaces/ghidra_workspace"
@@ -37,13 +40,12 @@ mkdir -p "${WORK_DIR}"
 cd "${WORK_DIR}"
 
 # ==========================================
-# 2. DOWNLOAD PORTABLE OPENJDK 21 (VERIFIED LINK)
+# 2. DOWNLOAD PORTABLE OPENJDK 21
 # ==========================================
 JDK_DIR="${WORK_DIR}/jdk-21"
 if [ ! -d "${JDK_DIR}" ] || [ ! -f "${JDK_DIR}/bin/java" ]; then
     echo "[+] Downloading official OpenJDK 21 binary..."
     
-    # Official Adoptium API direct link to latest OpenJDK 21 for Linux x64
     JDK_URL="https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
     
     rm -rf "${JDK_DIR}" openjdk21.tar.gz
@@ -55,7 +57,6 @@ if [ ! -d "${JDK_DIR}" ] || [ ! -f "${JDK_DIR}/bin/java" ]; then
     rm openjdk21.tar.gz
 fi
 
-# Set Java variables explicitly for current process and Ghidra
 export JAVA_HOME="${JDK_DIR}"
 export PATH="${JAVA_HOME}/bin:${PATH}"
 
@@ -89,7 +90,6 @@ fi
 
 GHIDRA_DIR="${WORK_DIR}/ghidra_latest"
 
-# Update Java heap memory limit in Ghidra's launch properties
 LAUNCH_PROPERTIES="${GHIDRA_DIR}/support/launch.properties"
 if [ -f "${LAUNCH_PROPERTIES}" ]; then
     echo "[+] Configuring Java Max Heap to ${ALLOCATED_MAX_MEM} in launch settings..."
@@ -97,21 +97,26 @@ if [ -f "${LAUNCH_PROPERTIES}" ]; then
 fi
 
 # ==========================================
-# 4. FETCH TARGET BINARY
+# 4. FETCH TARGET BINARY WITH STRICT CHECKING
 # ==========================================
-mkdir -p "${WORK_DIR}/target"
-cd "${WORK_DIR}/target"
+TARGET_DIR="${WORK_DIR}/target"
+mkdir -p "${TARGET_DIR}"
+cd "${TARGET_DIR}"
 
-if [ ! -f "${SO_FILENAME}" ]; then
+FULL_SO_PATH="${TARGET_DIR}/${SO_FILENAME}"
+
+if [ ! -f "${FULL_SO_PATH}" ] || [ ! -s "${FULL_SO_PATH}" ]; then
     echo "[+] Downloading target shared object binary..."
-    curl -L --progress-bar -o "${SO_FILENAME}" "${TARGET_SO_URL}"
+    curl -L --progress-bar -o "${FULL_SO_PATH}" "${TARGET_SO_URL}"
 fi
 
-if [ ! -s "${SO_FILENAME}" ]; then
-    echo "[-] Error: Downloaded file is empty or missing. Check TARGET_SO_URL."
+if [ ! -s "${FULL_SO_PATH}" ]; then
+    echo "[-] FATAL ERROR: Binary file does not exist or is empty at ${FULL_SO_PATH}"
+    echo "[-] Please check your TARGET_SO_URL inside start.sh"
     exit 1
 fi
-echo "[+] Binary acquired: $(du -h "${SO_FILENAME}" | cut -f1)"
+
+echo "[+] Binary acquired: $(du -h "${FULL_SO_PATH}" | cut -f1)"
 
 # ==========================================
 # 5. EXECUTE HEADLESS ANALYSIS
@@ -121,13 +126,11 @@ mkdir -p "${PROJECT_DIR}"
 
 echo "[+] Launching Ghidra Headless Analyzer..."
 
-# Explicitly pass JAVA_HOME inside environment
 JAVA_HOME="${JDK_DIR}" PATH="${JDK_DIR}/bin:${PATH}" \
 "${GHIDRA_DIR}/support/analyzeHeadless" \
     "${PROJECT_DIR}" \
     "${PROJECT_NAME}" \
-    -import "${WORK_DIR}/target/${SO_FILENAME}" \
-    -analysisTimeoutPerCpu 7200 \
+    -import "${FULL_SO_PATH}" \
     -max-cpu "${CPU_CORES}"
 
 # ==========================================
